@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, BookOpen, Check, ChevronRight, Cookie, FileClock, FileText, Folder, FolderOpen, HardDrive, KeyRound, LockKeyhole, Maximize2, Minus, RotateCcw, Search, Settings2, Shield, Sparkles, SquareTerminal, Trophy, X } from 'lucide-react';
 import { ACHIEVEMENTS, STAGE_BY_ID } from '../../engine/campaign';
@@ -15,16 +15,31 @@ const WINDOW_INFO:Record<AppId,{title:string;subtitle:string;icon:typeof Folder}
   achievements:{title:'Achievements',subtitle:'Career archive',icon:Trophy},
 };
 
-function UtilityFrame({appId,onClose,onMinimize,children}:{appId:AppId;onClose:()=>void;onMinimize:()=>void;children:ReactNode}){
-  const info=WINDOW_INFO[appId];const Icon=info.icon;const [maximized,setMaximized]=useState(false);
-  return <motion.section className={`utility-window utility-${appId} ${maximized?'utility-maximized':''}`} initial={{opacity:0,y:10,scale:.99}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8}} transition={{duration:.17}} aria-label={info.title}>
-    <header className="utility-titlebar"><div className="browser-lights"><i className="light-red"/><i className="light-yellow"/><i className="light-green"/></div><span className="utility-app-icon"><Icon size={14}/></span><span className="utility-title">{info.title} <small>— {info.subtitle}</small></span><div className="window-buttons"><button aria-label={`Minimize ${info.title}`} onClick={onMinimize}><Minus size={14}/></button><button aria-label={`Maximize ${info.title}`} onClick={()=>setMaximized((value)=>!value)}><Maximize2 size={13}/></button><button aria-label={`Close ${info.title}`} onClick={onClose}><X size={14}/></button></div></header>
+function UtilityFrame({appId,onClose,onMinimize,onFocus,zIndex,children}:{appId:AppId;onClose:()=>void;onMinimize:()=>void;onFocus:()=>void;zIndex:number;children:ReactNode}){
+  const info=WINDOW_INFO[appId];const Icon=info.icon;const [maximized,setMaximized]=useState(false);const [position,setPosition]=useState(()=>({x:appId==='files'?-36:appId==='terminal'?-12:appId==='settings'?-48:appId==='cookies'?18:appId==='journal'?22:0,y:appId==='files'?10:appId==='terminal'?34:appId==='settings'?65:appId==='cookies'?48:appId==='journal'?22:0}));
+  const drag=useRef<{pointerId:number;startX:number;startY:number;originX:number;originY:number;window:DOMRect;bounds:DOMRect}|null>(null);
+  useEffect(()=>{onFocus()},[]);
+  const onDragStart=(event:ReactPointerEvent<HTMLElement>)=>{
+    if(event.button!==0||maximized||(event.target as HTMLElement).closest('button'))return;
+    const section=event.currentTarget.closest('.utility-window');const bounds=section?.parentElement?.getBoundingClientRect();if(!section||!bounds)return;
+    event.preventDefault();onFocus();event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current={pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,originX:position.x,originY:position.y,window:section.getBoundingClientRect(),bounds};
+  };
+  const onDragMove=(event:ReactPointerEvent<HTMLElement>)=>{
+    const active=drag.current;if(!active||active.pointerId!==event.pointerId)return;
+    const dx=Math.max(active.bounds.left-active.window.left,Math.min(active.bounds.right-active.window.right,event.clientX-active.startX));
+    const dy=Math.max(active.bounds.top-active.window.top,Math.min(active.bounds.bottom-active.window.bottom,event.clientY-active.startY));
+    setPosition({x:active.originX+dx,y:active.originY+dy});
+  };
+  const onDragEnd=(event:ReactPointerEvent<HTMLElement>)=>{if(drag.current?.pointerId===event.pointerId)drag.current=null};
+  return <motion.section onPointerDownCapture={onFocus} className={`utility-window utility-${appId} ${maximized?'utility-maximized':''}`} style={{translate:maximized?'none':`${position.x}px ${position.y}px`,zIndex}} initial={{opacity:0,y:10,scale:.99}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:8}} transition={{duration:.17}} aria-label={info.title}>
+    <header className={`utility-titlebar ${maximized?'':'utility-drag-handle'}`} onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd} onLostPointerCapture={onDragEnd}><div className="browser-lights"><i className="light-red"/><i className="light-yellow"/><i className="light-green"/></div><span className="utility-app-icon"><Icon size={14}/></span><span className="utility-title">{info.title} <small>— {info.subtitle}</small></span><div className="window-buttons"><button aria-label={`Minimize ${info.title}`} onClick={onMinimize}><Minus size={14}/></button><button aria-label={maximized?`Restore ${info.title}`:`Maximize ${info.title}`} onClick={()=>setMaximized((value)=>!value)}><Maximize2 size={13}/></button><button aria-label={`Close ${info.title}`} onClick={onClose}><X size={14}/></button></div></header>
     <div className="utility-content">{children}</div>
   </motion.section>;
 }
 
-export function UtilityWindow({appId,onClose,onMinimize}:{appId:AppId;onClose:()=>void;onMinimize:()=>void}){
-  return <UtilityFrame appId={appId} onClose={onClose} onMinimize={onMinimize}>{appId==='files'?<FileExplorer/>:appId==='terminal'?<TerminalWindow/>:appId==='settings'?<SettingsWindow/>:appId==='cookies'?<CookieWindow/>:appId==='journal'?<JournalWindow/>:<AchievementWindow/>}</UtilityFrame>;
+export function UtilityWindow({appId,onClose,onMinimize,onFocus,zIndex}:{appId:AppId;onClose:()=>void;onMinimize:()=>void;onFocus:()=>void;zIndex:number}){
+  return <UtilityFrame appId={appId} onClose={onClose} onMinimize={onMinimize} onFocus={onFocus} zIndex={zIndex}>{appId==='files'?<FileExplorer/>:appId==='terminal'?<TerminalWindow/>:appId==='settings'?<SettingsWindow/>:appId==='cookies'?<CookieWindow/>:appId==='journal'?<JournalWindow/>:<AchievementWindow/>}</UtilityFrame>;
 }
 
 function FileExplorer(){

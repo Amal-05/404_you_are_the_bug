@@ -5,6 +5,7 @@ import { StageIntro, CompletionDialog, PauseDialog, StageSelectDialog, HowToPlay
 import { Desktop } from './components/Desktop';
 import { TitleScreen } from './components/TitleScreen';
 import { EndingScreen } from './components/EndingScreen';
+import { NotificationToast } from './components/NotificationToast';
 import { setAudioSettings, unlockAudio } from './engine/audio';
 import { musicSceneFor } from './engine/musicScenes';
 import type { StageId } from './types';
@@ -71,5 +72,6 @@ export default function App() {
     {dialog==='levels'&&<StageSelectDialog onClose={()=>setDialog(null)} onSelect={startStage} />}
     {dialog==='how-to-play'&&<HowToPlayDialog onClose={()=>setDialog(null)} onStart={()=>{useGameStore.getState().startNewGame();setDialog(null)}} />}
     {dialog==='restart'&&<RestartDialog onCancel={()=>setDialog(null)} onConfirm={()=>{restartRun();setDialog(null)}} />}
+    <NotificationToast />
   </div>;
 }

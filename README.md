@@ -39,4 +39,3 @@ npm run build
 
 The engine tests cover fictional URL normalization, protected routes, puzzle ordering, synchronized tabs, stealth routing, stage completion, and terminal command safety.
 
-The original adaptive ambient soundtrack changes across campaign sectors. Background music, master volume, and mute controls are available in Settings; audio unlocks after your first interaction to respect browser playback rules.

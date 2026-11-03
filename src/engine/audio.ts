@@ -3,7 +3,6 @@ import type { SettingsState } from '../types';
 type SoundName='startup'|'tab-open'|'tab-close'|'type'|'error'|'load'|'complete'|'ending'|'whisper'|'notification'|'click';
 const NOTES:Record<SoundName,number[]>={startup:[392,523,659],'tab-open':[620,820],'tab-close':[540,350],type:[470],error:[210,145],load:[440,554],complete:[440,554,659,880],ending:[330,247,196],whisper:[117,132,110],notification:[660,880],click:[510]};
 let context:AudioContext|undefined;
-let musicBus:GainNode|undefined;
 let sfxBus:GainNode|undefined;
 
 function getContext(settings:SettingsState):AudioContext|undefined{
@@ -12,22 +11,9 @@ function getContext(settings:SettingsState):AudioContext|undefined{
     context??=new AudioContext();
     if(context.state==='suspended')void context.resume().catch(()=>{});
     if(!sfxBus){sfxBus=context.createGain();sfxBus.connect(context.destination)}
-    if(!musicBus){musicBus=context.createGain();musicBus.connect(context.destination)}
-    setAudioSettings(settings);
+    sfxBus.gain.setTargetAtTime(settings.muted?0:Math.max(0,Math.min(1,settings.volume)),context.currentTime,.035);
     return context;
   }catch{return}
-}
-
-export function getMusicAudio(settings:SettingsState):{context:AudioContext;bus:GainNode}|undefined{
-  const ctx=getContext(settings);return ctx&&musicBus?{context:ctx,bus:musicBus}:undefined;
-}
-
-export function unlockAudio(settings:SettingsState):void{getContext(settings)}
-
-export function setAudioSettings(settings:SettingsState):void{
-  if(!context)return;const now=context.currentTime;const volume=settings.muted?0:Math.max(0,Math.min(1,settings.volume));
-  sfxBus?.gain.setTargetAtTime(volume,now,.035);
-  musicBus?.gain.setTargetAtTime(volume&&settings.musicEnabled?volume*.9:0,now,.12);
 }
 
 export function playSound(name:SoundName,settings:SettingsState):void{

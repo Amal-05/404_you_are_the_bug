@@ -6,8 +6,6 @@ import { Desktop } from './components/Desktop';
 import { TitleScreen } from './components/TitleScreen';
 import { EndingScreen } from './components/EndingScreen';
 import { NotificationToast } from './components/NotificationToast';
-import { setAudioSettings, unlockAudio } from './engine/audio';
-import { musicSceneFor } from './engine/musicScenes';
 import type { StageId } from './types';
 
 type DialogType = 'levels' | 'how-to-play' | 'pause' | 'restart' | null;
@@ -23,19 +21,12 @@ export default function App() {
   const [dialog,setDialog]=useState<DialogType>(null);
   const activeStage=useGameStore((state)=>state.activeStageId);
   const settings=useGameStore((state)=>state.settings);
-  const chosenEnding=useGameStore((state)=>state.chosenEnding);
   const screenForDialog=screen;
 
   useEffect(()=>{
     document.documentElement.style.setProperty('--user-scale',String(settings.textScale));
     document.documentElement.classList.toggle('reduced-motion',settings.reducedMotion);
   },[settings.textScale,settings.reducedMotion]);
-
-  useEffect(()=>{
-    setAudioSettings(settings);
-    const scene=musicSceneFor(activeStage,screen,chosenEnding);
-    void import('./engine/music').then(({startMusic})=>startMusic(scene,settings));
-  },[activeStage,chosenEnding,screen,settings]);
 
   useEffect(()=>{
     const onKeyDown=(event:KeyboardEvent)=>{
@@ -60,7 +51,7 @@ export default function App() {
   },[screen,showIntro,completionOverlay]);
 
   const startStage=(stageId:StageId)=>{openStage(stageId);setDialog(null)};
-  return <div className="game-root" onPointerDownCapture={()=>unlockAudio(settings)}>
+  return <>
     <AnimatePresence mode="wait">
       {screen==='menu'&&<motion.div key="menu" className="screen-transition" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><TitleScreen onOpenLevels={()=>setDialog('levels')} onHowToPlay={()=>setDialog('how-to-play')} /></motion.div>}
       {screen==='desktop'&&<motion.div key="desktop" className="screen-transition" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><Desktop onOpenLevels={()=>setDialog('levels')} onPause={()=>setDialog('pause')} onHowToPlay={()=>setDialog('how-to-play')} /></motion.div>}
@@ -73,5 +64,5 @@ export default function App() {
     {dialog==='how-to-play'&&<HowToPlayDialog onClose={()=>setDialog(null)} onStart={()=>{useGameStore.getState().startNewGame();setDialog(null)}} />}
     {dialog==='restart'&&<RestartDialog onCancel={()=>setDialog(null)} onConfirm={()=>{restartRun();setDialog(null)}} />}
     <NotificationToast />
-  </div>;
+  </>;
 }

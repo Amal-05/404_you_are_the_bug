@@ -5,14 +5,14 @@ import { playSound } from '../engine/audio';
 import { normalizeSimUrl, parseSimUrl, getRouteTitle } from '../engine/navigation';
 import { canEnterRoute, canEnterStage, CONVERSATION_ORDER, ERROR_ORDER, LOOP_SYNC_ORDER, newStageProgress, observerStep, stageProgressFor, SYNC_ORDER, validConversationOrder, validCookieIdentity, validSyncPair } from '../engine/puzzles';
 import { parseTerminalCommand, terminalHelp } from '../engine/terminal';
-import type { AppId, BrowserTab, Clue, EndingChoice, GameNotification, GameStore, HistoryEntry, MemoryFragment, Screen, SimCookie, StageId } from '../types';
+import type { AppId, BrowserTab, Clue, EndingChoice, GameNotification, GameStore, HistoryEntry, MemoryFragment, Screen, SettingsState, SimCookie, StageId } from '../types';
 
 const SAVE_KEY = 'you-are-the-bug:campaign:v1';
 const now = () => Date.now();
 const id = () => globalThis.crypto?.randomUUID?.() ?? `id-${now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
 const clueNoticesShown=new Set<string>();
 const makeTab = (url = 'home.local'): BrowserTab => ({ id:id(), title:getRouteTitle(parseSimUrl(url).route), url:normalizeSimUrl(url), stack:[normalizeSimUrl(url)], historyIndex:0, openedAt:now(), arrangement:[] });
-const defaultSettings = { muted:false, musicEnabled:true, volume:0.38, reducedMotion:false, crtEffects:true, textScale:1 };
+const defaultSettings = { muted:false, volume:0.38, reducedMotion:false, crtEffects:true, textScale:1 };
 const defaultWindows: Record<AppId, boolean> = { browser:true, files:false, terminal:false, settings:false, cookies:false, journal:false, achievements:false };
 
 function appendHistory(history: HistoryEntry[], tab: BrowserTab, url: string, snapshot?: string): HistoryEntry[] {
@@ -300,7 +300,7 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
   updateSettings:(settings)=>set((state)=>({settings:{...state.settings,...settings}})),
 }), {
   name:SAVE_KEY,
-  version:2,
+  version:3,
   storage:createJSONStorage(()=>localStorage),
   partialize:(state)=>({
     screen:state.screen,activeStageId:state.activeStageId,unlockedStages:state.unlockedStages,completedStages:state.completedStages,
@@ -312,7 +312,8 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
   migrate:(persisted,version)=>{
     const current=initialData();if(version===0||!persisted||typeof persisted!=='object')return current;
     const old=persisted as Partial<Snapshot>;
-    return {...current,...old,settings:{...current.settings,...old.settings},windowState:{...current.windowState},stageProgress:old.stageProgress??current.stageProgress};
+    const settings={...current.settings,...old.settings} as SettingsState&{musicEnabled?:boolean};delete settings.musicEnabled;
+    return {...current,...old,settings,windowState:{...current.windowState},stageProgress:old.stageProgress??current.stageProgress};
   },
 }));
 

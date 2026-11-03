@@ -17,7 +17,7 @@ export type StageProgress = {
   startedAt?: number;
   timerDeadline?: number;
 };
-export type SettingsState = { muted: boolean; musicEnabled: boolean; volume: number; reducedMotion: boolean; crtEffects: boolean; textScale: number };
+export type SettingsState = { muted: boolean; volume: number; reducedMotion: boolean; crtEffects: boolean; textScale: number };
 export type GameStore = {
   screen: Screen;
   activeStageId: StageId;

@@ -11,7 +11,7 @@ const SAVE_KEY = 'you-are-the-bug:campaign:v1';
 const now = () => Date.now();
 const id = () => globalThis.crypto?.randomUUID?.() ?? `id-${now().toString(36)}-${Math.random().toString(36).slice(2,9)}`;
 const makeTab = (url = 'home.local'): BrowserTab => ({ id:id(), title:getRouteTitle(parseSimUrl(url).route), url:normalizeSimUrl(url), stack:[normalizeSimUrl(url)], historyIndex:0, openedAt:now(), arrangement:[] });
-const defaultSettings = { muted:false, volume:0.38, reducedMotion:false, crtEffects:true, textScale:1 };
+const defaultSettings = { muted:false, musicEnabled:true, volume:0.38, reducedMotion:false, crtEffects:true, textScale:1 };
 const defaultWindows: Record<AppId, boolean> = { browser:true, files:false, terminal:false, settings:false, cookies:false, journal:false, achievements:false };
 
 function appendHistory(history: HistoryEntry[], tab: BrowserTab, url: string, snapshot?: string): HistoryEntry[] {
@@ -290,7 +290,7 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
   updateSettings:(settings)=>set((state)=>({settings:{...state.settings,...settings}})),
 }), {
   name:SAVE_KEY,
-  version:1,
+  version:2,
   storage:createJSONStorage(()=>localStorage),
   partialize:(state)=>({
     screen:state.screen,activeStageId:state.activeStageId,unlockedStages:state.unlockedStages,completedStages:state.completedStages,

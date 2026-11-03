@@ -5,6 +5,6 @@ export default defineConfig({
   plugins: [react()],
   server: { host: '127.0.0.1', port: 4173, strictPort: true },
   preview: { host: '127.0.0.1', port: 4174, strictPort: true },
-  build: { sourcemap: true, target: 'es2022' },
+  build: { sourcemap: true, target: 'es2022', chunkSizeWarningLimit: 550 },
   test: { environment: 'jsdom', setupFiles: './src/test/setup.ts' },
 });

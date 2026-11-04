@@ -2,6 +2,12 @@
 
 A complete browser based narrative puzzle game. The in-game desktop and browser are fictional: gameplay never reads real browser tabs, cookies, history, files, or operating system data. Campaign saves and settings stay in the browser's local storage on this device.
 
+<p align="center">
+  <a href="https://404-you-are-the-bug.vercel.app/">
+    <img src="https://img.shields.io/badge/%E2%96%B6%20PLAY%20THE%20GAME-67f59b?style=for-the-badge&labelColor=101720" alt="Play the game" />
+  </a>
+</p>
+
 ## Requirements
 
 - Node.js 20.19+ or 22.12+

@@ -150,3 +150,15 @@ button,a,input,select,textarea{-webkit-tap-highlight-color:transparent;touch-act
   .title-card .title-meta{margin-top:18px}
   .title-card .title-caption{margin-top:8px}
 }
+
+/* Slow, low-cost motion gives the title screen a living orbital backdrop. */
+.title-orbit-one{animation:titleOrbitOne 54s linear infinite}
+.title-orbit-two{animation:titleOrbitTwo 82s linear infinite}
+.title-screen:after{content:'';position:fixed;inset:-12%;z-index:0;pointer-events:none;background:radial-gradient(circle at 50% 48%,#67f59b0b,transparent 34%),radial-gradient(circle at 68% 34%,#a78bfa09,transparent 25%);animation:titleGlow 14s ease-in-out infinite alternate}
+.title-orbit-one:before,.title-orbit-two:after{animation:titleBeacon 5s ease-in-out infinite alternate}
+@keyframes titleOrbitOne{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}
+@keyframes titleOrbitTwo{from{transform:translate(-50%,-50%) rotate(360deg)}to{transform:translate(-50%,-50%) rotate(0deg)}}
+@keyframes titleGlow{from{opacity:.45;transform:scale(.96)}to{opacity:1;transform:scale(1.04)}}
+@keyframes titleBeacon{from{opacity:.45;box-shadow:0 0 10px #67f59b22}to{opacity:1;box-shadow:0 0 22px #67f59b66}}
+.reduced-motion .title-orbit-one,.reduced-motion .title-orbit-two,.reduced-motion .title-screen:after,.reduced-motion .title-orbit-one:before,.reduced-motion .title-orbit-two:after{animation:none!important}
+@media (prefers-reduced-motion:reduce){.title-orbit-one,.title-orbit-two,.title-screen:after,.title-orbit-one:before,.title-orbit-two:after{animation:none!important}}

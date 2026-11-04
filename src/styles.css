@@ -121,3 +121,32 @@ button,a,input,select,textarea{-webkit-tap-highlight-color:transparent;touch-act
   .title-caption{margin-top:8px}
 }
 .title-orbit{position:fixed}
+
+/* Let the title float over the full-screen orbital backdrop instead of a card. */
+.title-screen{background:radial-gradient(ellipse at 50% 48%,#1b2a34 0%,#101720 38%,#090c12 76%,#07090d 100%)}
+.title-card{width:min(900px,calc(100vw - 40px));min-height:0;padding:clamp(24px,4vw,56px);background:transparent;border:0;border-radius:0;box-shadow:none}
+.title-mark{border-radius:50%;background:radial-gradient(circle at 35% 30%,#203b2d,#101b17);box-shadow:0 0 34px #67f59b12,inset 0 0 0 1px #ffffff08}
+.title-card .eyebrow{margin-top:10px;color:#9caab7}
+.title-card h1{margin:22px 0 18px;font-size:clamp(64px,9vw,112px);line-height:.86;letter-spacing:-.075em;text-shadow:0 8px 38px #0005}
+.title-card h1 span{color:var(--green);text-shadow:0 0 36px #67f59b24}
+.title-tagline{font-size:clamp(16px,2vw,19px)}
+.title-description{font-size:14px;color:#aeb8c4!important}
+.title-card .title-actions{margin-top:30px;gap:12px}
+.title-card .title-utility-row{margin-top:22px;gap:14px}
+.title-card .title-meta{margin-top:30px;color:#8d9aa7}
+.title-card .title-caption{margin-top:14px;color:#93a0ad}
+@media(max-width:680px){
+  .title-card{width:100%;padding:26px 12px}
+  .title-card h1{font-size:clamp(56px,15vw,82px);margin-block:20px 16px}
+  .title-card .title-actions{margin-top:24px;gap:9px}
+  .title-card .title-utility-row{gap:4px;margin-top:18px}
+  .title-card .title-meta{margin-top:22px}
+}
+@media(max-height:800px){
+  .title-card{padding-block:18px}
+  .title-card h1{font-size:clamp(50px,6vw,72px);margin:14px 0 12px}
+  .title-card .title-actions{margin-top:20px}
+  .title-card .title-utility-row{margin-top:14px}
+  .title-card .title-meta{margin-top:18px}
+  .title-card .title-caption{margin-top:8px}
+}

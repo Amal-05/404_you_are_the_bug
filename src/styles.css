@@ -83,3 +83,6 @@ button,a,input,select,textarea{-webkit-tap-highlight-color:transparent;touch-act
   .title-card h1{margin-block:14px 10px}
   .title-card .title-meta{margin-top:18px}
 }
+
+/* Keep the landing panel proportionate across wide desktop browser viewports. */
+@media(min-width:681px){.title-card{width:min(1400px,80vw)}}

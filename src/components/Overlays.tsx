@@ -13,12 +13,14 @@ function ModalShell({children,onClose,label='Dialog',wide=false}:{children:React
 
 export function StageIntro({stageId,onBegin,onShowLevels}:{stageId:StageId;onBegin:()=>void;onShowLevels:()=>void}){
   const stage=STAGE_BY_ID[stageId];const completed=useGameStore((state)=>state.completedStages.includes(stageId));
+  const realityBreakSeen=useGameStore((state)=>state.featureState.realityBreakSeen);
   return <ModalShell label={`Level ${stage.number} introduction`}>
     <div className="modal-topline"><span className="eyebrow">SECTOR {String(stage.number).padStart(2,'0')} // BRIEFING</span><span className="modal-mark">404</span></div>
     <h2>{stage.title}</h2><p className="modal-subtitle">{stage.subtitle}</p>
     <div className="briefing-objective"><span className="section-label">OBJECTIVE</span><p>{stage.objective}</p></div>
     <div className="briefing-details"><div><span className="section-label">NEW MECHANIC</span><p>{stage.lesson}</p></div><div><span className="section-label">RECOVERY</span><p>Progress saves automatically. You can revisit unlocked sectors from Level Select.</p></div></div>
     {stageId==='level-0'&&<div className="address-example"><span className="section-label">FIRST ROUTE · TYPE IN THE GAME ADDRESS BAR</span><code>home.local/404/welcome</code><p>Find <b>404</b> in Help Center and <b>welcome</b> in Personal Archive. Either fragment order works.</p></div>}
+    {stageId==='level-9'&&realityBreakSeen&&<div className="reality-break-briefing"><span className="section-label">FICTIONAL SYSTEM UPDATE · CHECKPOINT SAVED</span><p>The opening desktop was inside a nested containment system. Your discoveries carry forward. Continue to skip the transition text; reduced motion remains active in Settings.</p></div>}
     <div className="modal-footer"><button className="button button-quiet" onClick={onShowLevels}><Layers3 size={15}/>Level Select</button><button className="button button-primary" onClick={onBegin}><Play size={15} fill="currentColor"/>{completed?'Replay Sector':'Enter Sector'}<ArrowRight size={15}/></button></div>
   </ModalShell>;
 }

@@ -42,4 +42,8 @@ export const ACHIEVEMENTS = [
   { id:'root-access', title:'Root Access', description:'Use the fictional terminal to reach root.' },
   { id:'all-endings', title:'Three Futures', description:'Discover all three final endings.' },
   { id:'all-memories', title:'Memory Hoarder', description:'Recover all hidden memory fragments.' },
+  { id:'tab-hopper', title:'Tab Hopper', description:'Open five simulated browser tabs.', hidden:true },
+  { id:'digital-archaeologist', title:'Digital Archaeologist', description:'Inspect ten simulated files.', hidden:true },
+  { id:'repeat-session', title:'Not Your First Time', description:'Begin a new session after completing the finale.', hidden:true },
+  { id:'rooted', title:'Rooted', description:'Find the hidden parent directory map.', hidden:true },
 ];

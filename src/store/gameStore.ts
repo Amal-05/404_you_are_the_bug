@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { CAMPAIGN, NEXT_STAGE, REQUIRED_HIDDEN_MEMORIES, STAGE_BY_ID } from '../engine/campaign';
+import { ACHIEVEMENTS, CAMPAIGN, NEXT_STAGE, REQUIRED_HIDDEN_MEMORIES, STAGE_BY_ID } from '../engine/campaign';
 import { playSound } from '../engine/audio';
 import { normalizeSimUrl, parseSimUrl, getRouteTitle } from '../engine/navigation';
 import { canEnterRoute, canEnterStage, CONVERSATION_ORDER, ERROR_ORDER, LOOP_SYNC_ORDER, newStageProgress, observerStep, stageProgressFor, SYNC_ORDER, validConversationOrder, validCookieIdentity, validSyncPair } from '../engine/puzzles';
 import { parseTerminalCommand, terminalHelp } from '../engine/terminal';
-import type { AppId, BrowserTab, Clue, EndingChoice, GameNotification, GameStore, HistoryEntry, MemoryFragment, Screen, SettingsState, SimCookie, StageId } from '../types';
+import { nextGameTick, recordedGameTick } from '../engine/gameTime';
+import type { AppId, BrowserTab, Clue, EndingChoice, FeatureState, GameNotification, GameStore, HistoryEntry, MemoryFragment, Screen, SettingsState, SimCookie, StageId } from '../types';
 
 const SAVE_KEY = 'you-are-the-bug:campaign:v1';
 const now = () => Date.now();
@@ -13,10 +14,11 @@ const id = () => globalThis.crypto?.randomUUID?.() ?? `id-${now().toString(36)}-
 const clueNoticesShown=new Set<string>();
 const makeTab = (url = 'home.local'): BrowserTab => ({ id:id(), title:getRouteTitle(parseSimUrl(url).route), url:normalizeSimUrl(url), stack:[normalizeSimUrl(url)], historyIndex:0, openedAt:now(), arrangement:[] });
 const defaultSettings = { muted:false, volume:0.38, reducedMotion:false, crtEffects:true, textScale:1 };
-const defaultWindows: Record<AppId, boolean> = { browser:true, files:false, terminal:false, settings:false, cookies:false, journal:false, achievements:false };
+const defaultWindows: Record<AppId, boolean> = { browser:true, files:false, terminal:false, settings:false, cookies:false, journal:false, achievements:false, systems:false };
+const defaultFeatures = ():FeatureState => ({version:1,featureFlags:{recursiveDesktop:true,virtualFiles:true,behaviourMemory:true,dynamicWebsites:true,hiddenAchievements:true,systemLies:true,mirrorMode:true,futureEmails:true,controlledFailure:true,realityBreaker:true},flags:{},counters:{routeVisits:0,tabsOpened:0,filesInspected:0,cluesFound:0,hintsUsed:0},discoveredClues:[],inspectedFiles:[],visitsByRoute:{},events:[],claims:{},readEmails:[],repliedEmails:[],archivedEmails:[],flaggedEmails:[],emailReplies:{},nestedOpen:false,nestedMinimized:false,nestedDepth:0,nestedTabs:['browser','files','terminal'],nestedActiveTab:'browser',mirrorActive:false,mirrorSequence:[],systemsSection:'files',failureActive:false,failureRecovered:false,realityBreakSeen:false});
 
-function appendHistory(history: HistoryEntry[], tab: BrowserTab, url: string, snapshot?: string): HistoryEntry[] {
-  const entry: HistoryEntry = { id:id(), tabId:tab.id, url, title:getRouteTitle(parseSimUrl(url).route), visitedAt:now(), snapshot };
+function appendHistory(history: HistoryEntry[], tab: BrowserTab, url: string, snapshot?: string, gameTime = history.length + 1): HistoryEntry[] {
+  const entry: HistoryEntry = { id:id(), tabId:tab.id, url, title:getRouteTitle(parseSimUrl(url).route), visitedAt:gameTime, snapshot };
   return [entry, ...history].slice(0, 250);
 }
 
@@ -30,7 +32,7 @@ function initialData() {
     clues:[] as Clue[], memoryFragments:[] as MemoryFragment[], achievements:[] as string[], endingsSeen:[] as EndingChoice[], chosenEnding:undefined as EndingChoice|undefined,
     stageProgress:progress, notifications:[] as GameNotification[], terminalLog:[] as GameStore['terminalLog'],
     observerHeat:0, observerLastHost:'', observerPath:[], windowState:{...defaultWindows}, minimizedWindows:[], settings:{...defaultSettings},
-    newGamePlus:0, lastSavedAt:now(), completionOverlay:false, showIntro:false,
+    newGamePlus:0, lastSavedAt:now(), completionOverlay:false, showIntro:false, featureState:defaultFeatures(),
   };
 }
 
@@ -40,14 +42,36 @@ function grantAchievement(state: GameStore, achievementId: string): string[] { r
 function canUnlockSecret(memory: MemoryFragment[]) { return REQUIRED_HIDDEN_MEMORIES.every((required) => memory.some((fragment) => fragment.id === required)); }
 function loopReady(flags:Record<string,boolean|number|string>){return Boolean(flags.loopBookmark&&flags.loopCookie&&flags.loopHistory&&flags.loopSynced)}
 function addLine(state: GameStore, input: string, output: string, kind:'command'|'system'='command') {
-  return [...state.terminalLog,{id:id(),input,output,at:now(),kind}].slice(-100);
+  return [...state.terminalLog,{id:id(),input,output,at:nextGameTick(state.featureState?.events.at(-1)?.gameTime??0),kind}].slice(-100);
 }
 
 export const useGameStore = create<GameStore>()(persist((set,get) => ({
   ...initialData(),
-  addNotification:(title,message,tone='info')=>set((state)=>({notifications:[{id:id(),title,message,createdAt:new Date().toISOString(),read:false,tone},...state.notifications].slice(0,12)})),
+  addNotification:(title,message,tone='info')=>set((state)=>({notifications:[{id:id(),title,message,createdAt:recordedGameTick(state.featureState?.events.at(-1)?.gameTime??0),read:false,tone},...state.notifications].slice(0,12)})),
   dismissNotification:(notificationId)=>set((state)=>({notifications:state.notifications.filter((item)=>item.id!==notificationId)})),
   clearNotifications:()=>set({notifications:[]}),
+  recordGameEvent:(type,payload={})=>{const before=get();const current=before.featureState??defaultFeatures();const counters={...current.counters};const visitsByRoute={...current.visitsByRoute};if(current.featureFlags.behaviourMemory){if(type==='URL_VISITED'){counters.routeVisits=(counters.routeVisits??0)+1;const route=String(payload.route??'unknown');visitsByRoute[route]=(visitsByRoute[route]??0)+1}if(type==='TAB_OPENED')counters.tabsOpened=(counters.tabsOpened??0)+1;if(type==='FILE_INSPECTED')counters.filesInspected=(counters.filesInspected??0)+1;if(type==='CLUE_DISCOVERED')counters.cluesFound=(counters.cluesFound??0)+1;if(type==='HINT_REQUESTED')counters.hintsUsed=(counters.hintsUsed??0)+1}const event={id:id(),type,levelId:before.activeStageId,gameTime:nextGameTick(current.events.at(-1)?.gameTime??0),payload};let achievements=before.achievements;if(current.featureFlags.hiddenAchievements){if(counters.tabsOpened>=5&&!achievements.includes('tab-hopper'))achievements=[...achievements,'tab-hopper'];if(counters.filesInspected>=10&&!achievements.includes('digital-archaeologist'))achievements=[...achievements,'digital-archaeologist'];if(before.newGamePlus>0&&!achievements.includes('repeat-session'))achievements=[...achievements,'repeat-session'];if(type==='FILE_INSPECTED'&&payload.fileId==='parent-map'&&!achievements.includes('rooted'))achievements=[...achievements,'rooted'];}set({featureState:{...current,counters,visitsByRoute,events:[...current.events,event].slice(-500)},achievements,lastSavedAt:now()});const gained=achievements.filter(item=>!before.achievements.includes(item));if(gained.length)get().addNotification('HIDDEN ACHIEVEMENT',gained.map(item=>ACHIEVEMENTS.find(achievement=>achievement.id===item)?.title??item).join(', '),'story')},
+  inspectVirtualFile:(fileId)=>{if(!(get().featureState??defaultFeatures()).featureFlags.virtualFiles)return;set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,inspectedFiles:addUnique(f.inspectedFiles??[],fileId)}}});get().recordGameEvent('FILE_INSPECTED',{fileId});if(fileId==='observer-backup')get().discoverClue({id:'observer-backup',title:'Observer Backup',description:'A virtual deletion log and checksum contradict the Observer’s claim that this file never existed.',location:'/root/observer_backup.old',relatedPuzzle:'The System Lies'});if(fileId==='deleted-snapshot')get().discoverClue({id:'deleted-snapshot',title:'Deleted Index Snapshot',description:'History snapshot H-03 links to observer_backup.old and records its deletion.',location:'history://deleted-index',relatedPuzzle:'The System Lies'})},
+  setClaimStatus:(claimId,status)=>{const f=get().featureState??defaultFeatures();if(!f.featureFlags.systemLies||!['level-4','level-5','level-7','level-9'].includes(get().activeStageId)){get().addNotification('INVESTIGATION LOCKED','The Observer’s claim becomes part of the investigation in Level 4.','info');return}if(claimId==='observer-never-existed'&&status==='doubt'&&(!f.inspectedFiles.includes('observer-backup')||!f.inspectedFiles.includes('deleted-snapshot'))){get().addNotification('EVIDENCE INCOMPLETE','Inspect the backup file and its independent history snapshot before challenging the claim.','warning');return}set((state)=>{const current=state.featureState??defaultFeatures();return {featureState:{...current,claims:{...current.claims,[claimId]:status}}}});get().recordGameEvent('CLAIM_REVIEWED',{claimId,status})},
+  openNestedDesktop:()=>{const f=get().featureState??defaultFeatures();if(!f.featureFlags.recursiveDesktop||f.nestedDepth>=2||!['level-3','level-6','level-9'].includes(get().activeStageId)){get().addNotification('NESTING UNAVAILABLE','The recursive desktop unlocks in Level 3 and has a safe depth limit.','warning');return}set({featureState:{...f,nestedOpen:true,nestedDepth:f.nestedDepth+1,nestedTabs:f.nestedTabs.length?f.nestedTabs:['browser','files','terminal'],nestedActiveTab:f.nestedActiveTab||'browser'}});get().recordGameEvent('NESTED_DESKTOP_OPENED',{depth:f.nestedDepth+1})},
+  selectNestedTab:(tab)=>set((state)=>{const f=state.featureState??defaultFeatures();return f.nestedOpen&&f.nestedTabs.includes(tab)?{featureState:{...f,nestedActiveTab:tab}}:{}}),
+  minimizeNestedDesktop:()=>set((state)=>{const f=state.featureState??defaultFeatures();return f.nestedOpen?{featureState:{...f,nestedMinimized:true}}:{}}),
+  restoreNestedDesktop:()=>set((state)=>{const f=state.featureState??defaultFeatures();return f.nestedOpen?{featureState:{...f,nestedMinimized:false}}:{}}),
+  closeNestedDesktop:()=>set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,nestedOpen:false,nestedMinimized:false}}}),
+  signalParentDesktop:()=>{const f=get().featureState??defaultFeatures();if(!f.nestedOpen){get().addNotification('NO CHILD INSTANCE','Open the nested desktop first.','warning');return}set({featureState:{...f,nestedOpen:false,flags:{...f.flags,parentTokenReceived:true}}});get().recordGameEvent('PARENT_SIGNAL_SENT',{signalType:'PARENT_TOKEN'});get().addNotification('PARENT TOKEN RECEIVED','The child instance unlocked the parent’s archived record.','story')},
+  toggleMirrorMode:()=>{const f=get().featureState??defaultFeatures();if(!f.featureFlags.mirrorMode||!['level-6','level-9'].includes(get().activeStageId)){get().addNotification('MIRROR MODE LOCKED','The paired world opens in Level 6.','info');return}set({featureState:{...f,mirrorActive:!f.mirrorActive,mirrorSequence:[]}})},
+  appendMirrorSymbol:(symbol)=>set((state)=>{const f=state.featureState??defaultFeatures();return f.featureFlags.mirrorMode&&f.mirrorActive&&f.mirrorSequence.length<4?{featureState:{...f,mirrorSequence:[...f.mirrorSequence,symbol]}}:{}}),
+  clearMirrorSequence:()=>set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,mirrorSequence:[]}}}),
+  submitMirrorSequence:()=>{const f=get().featureState??defaultFeatures();const expected=['◆','▲','●','◀'];if(!f.featureFlags.mirrorMode||!f.mirrorActive){get().addNotification('MIRROR WORLD INACTIVE','Switch to the mirrored world before entering its sequence.','warning');return}if(f.mirrorSequence.length!==expected.length||!expected.every((symbol,index)=>symbol===f.mirrorSequence[index])){set({featureState:{...f,mirrorSequence:[]}});get().addNotification('MIRROR SEQUENCE REJECTED','The mapping reverses all four source symbols. The sequence reset; no progress was lost.','warning');return}set({featureState:{...f,mirrorSequence:[],flags:{...f.flags,mirrorSequenceSolved:true}}});get().recordGameEvent('MIRROR_PUZZLE_SOLVED',{puzzleId:'M-01'});get().discoverClue({id:'mirror-sequence',title:'Mirrored Sequence',description:'The mirrored order reversed the four symbols and unlocked the parent route.',location:'Mirror Mode',relatedPuzzle:'Two of You'});get().addNotification('MIRROR ROUTE OPEN','The mapped sequence was accepted.','story')},
+  readFutureEmail:(emailId)=>{if(!(get().featureState??defaultFeatures()).featureFlags.futureEmails)return;set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,readEmails:f.readEmails.includes(emailId)?f.readEmails:[...f.readEmails,emailId]}}});get().recordGameEvent('MESSAGE_READ',{emailId})},
+  replyToFutureEmail:(emailId,reply)=>{if(!(get().featureState??defaultFeatures()).featureFlags.futureEmails)return;set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,repliedEmails:f.repliedEmails.includes(emailId)?f.repliedEmails:[...f.repliedEmails,emailId],emailReplies:{...f.emailReplies,[emailId]:[...(f.emailReplies[emailId]??[]),reply]},flags:{...f.flags,[`reply-${emailId}`]:true}}}});get().recordGameEvent('MESSAGE_REPLIED',{emailId,reply});get().addNotification('REPLY SAVED','Your reply is stored in the fictional inbox.','story')},
+  archiveFutureEmail:(emailId)=>set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,archivedEmails:addUnique(f.archivedEmails,emailId)}}}),
+  toggleFlagFutureEmail:(emailId)=>set((state)=>{const f=state.featureState??defaultFeatures();const flaggedEmails=f.flaggedEmails.includes(emailId)?f.flaggedEmails.filter(item=>item!==emailId):[...f.flaggedEmails,emailId];return {featureState:{...f,flaggedEmails}}}),
+  triggerSystemFailure:()=>{const f=get().featureState??defaultFeatures();if(!f.featureFlags.controlledFailure||f.failureRecovered||!['level-5','level-8','level-9'].includes(get().activeStageId)){get().addNotification('SCENARIO LOCKED','This authored recovery scenario becomes available in Level 5.','info');return}set({featureState:{...f,failureActive:true}});get().recordGameEvent('SYSTEM_FAILURE_STARTED',{scenario:'history-index'});get().addNotification('SIMULATED FAILURE','The fictional history index is unavailable. Pause, settings, and recovery remain accessible.','warning')},
+  recoverSystemFailure:()=>{const f=get().featureState??defaultFeatures();if(!f.failureActive)return;set({featureState:{...f,failureActive:false,failureRecovered:true,flags:{...f.flags,historyIndexRestored:true}}});get().recordGameEvent('SYSTEM_FAILURE_RECOVERED',{scenario:'history-index'});get().addNotification('RECOVERY COMPLETE','The simulated history index has been restored from its authored backup.','story')},
+  triggerRealityBreaker:()=>{const f=get().featureState??defaultFeatures();if(!f.featureFlags.realityBreaker||f.realityBreakSeen)return;set({featureState:{...f,realityBreakSeen:true,flags:{...f.flags,openingDesktopWasNested:true}}});get().recordGameEvent('REALITY_BREAK_STARTED',{checkpoint:'level-8-complete'});get().addNotification('SYSTEM UPDATE // FICTIONAL','The opening desktop was one layer inside containment. Your progress is intact; the next level reveals the route.','story')},
+  toggleFeatureFlag:(key)=>set((state)=>{const f=state.featureState??defaultFeatures();return {featureState:{...f,featureFlags:{...f.featureFlags,[key]:!f.featureFlags[key]}}}}),
+  setSystemsSection:(section)=>set((state)=>({featureState:{...(state.featureState??defaultFeatures()),systemsSection:section}})),
   openWindow:(windowId)=>set((state)=>({windowState:{...state.windowState,[windowId]:true},minimizedWindows:state.minimizedWindows.filter((item)=>item!==windowId),screen:'desktop'})),
   closeWindow:(windowId)=>set((state)=>({windowState:{...state.windowState,[windowId]:false}})),
   minimizeWindow:(windowId)=>set((state)=>({minimizedWindows:addUnique(state.minimizedWindows,windowId),windowState:{...state.windowState,[windowId]:false}})),
@@ -57,12 +81,14 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     const newGamePlus=old.completedStages.includes('level-10')?old.newGamePlus+1:old.newGamePlus;
     const unlockedStages=addUnique(old.unlockedStages,'level-0');
     set({...base,screen:'desktop',activeStageId:'level-0',unlockedStages,completedStages:old.completedStages,achievements:old.achievements,endingsSeen:old.endingsSeen,memoryFragments:old.memoryFragments,clues:[],newGamePlus,lastSavedAt:now(),showIntro:true});
+    get().recordGameEvent('TAB_OPENED',{url:'home.local',sessionStart:true});
     playSound('startup',old.settings);
   },
   continueGame:()=>set((state)=>({screen:'desktop',windowState:{...state.windowState,browser:true},showIntro:false})),
   restartRun:()=>{
     const old=get(); const base=initialData();
     set({...base,screen:'desktop',unlockedStages:old.unlockedStages,completedStages:old.completedStages,achievements:old.achievements,endingsSeen:old.endingsSeen,memoryFragments:old.memoryFragments,newGamePlus:old.newGamePlus,settings:old.settings,showIntro:true});
+    get().recordGameEvent('TAB_OPENED',{url:'home.local',sessionRestart:true});
     playSound('startup',old.settings);
   },
   openStage:(stageId)=>{
@@ -73,6 +99,7 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     const stageCookies:SimCookie[]=stageId==='level-4'?[{name:'creator_name',value:'ELI',category:'identity',inspected:false,stageId},{name:'creator_role',value:'maintainer',category:'identity',inspected:false,stageId},{name:'creator_signature',value:'ORIGINAL',category:'memory',inspected:false,stageId},{name:'creator_name_corrupt',value:'MARA // checksum mismatch',category:'identity',inspected:false,stageId}]:stageId==='level-9'?[{name:'LOOP_KEY',value:'remember',category:'memory',inspected:false,stageId}]:[];
     const cookies=stageCookies.length?[...state.cookies.filter((cookie)=>!stageCookies.some((item)=>item.name===cookie.name)),...stageCookies]:state.cookies;
     set({screen:'desktop',activeStageId:stageId,tabs:[tab],activeTabId:tab.id,history:[],completionOverlay:false,showIntro:true,observerHeat:0,observerLastHost:'',observerPath:[],windowState:{...defaultWindows,browser:true},minimizedWindows:[],cookies});
+    get().recordGameEvent('TAB_OPENED',{url:startUrl,stageTransition:true});
     get().navigate(startUrl,tab.id);
   },
   beginStage:()=>set((state)=>({screen:'desktop',showIntro:false,windowState:{...state.windowState,browser:true}})),
@@ -91,12 +118,13 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     const completed=addUnique(state.completedStages,stageId);
     const unlocked=next?addUnique(state.unlockedStages,next):state.unlockedStages;
     const stage=STAGE_BY_ID[stageId];
-    const memories=state.memoryFragments.some((fragment)=>fragment.id===`main-${stageId}`)?state.memoryFragments:[...state.memoryFragments,{id:`main-${stageId}`,text:stage.mainMemory,stageId,discoveredAt:new Date().toISOString()}];
+    const memories=state.memoryFragments.some((fragment)=>fragment.id===`main-${stageId}`)?state.memoryFragments:[...state.memoryFragments,{id:`main-${stageId}`,text:stage.mainMemory,stageId,discoveredAt:recordedGameTick(state.featureState?.events.at(-1)?.gameTime??0)}];
     const secretUnlocked=canUnlockSecret(memories);
     const unlocks=secretUnlocked?addUnique(unlocked,'secret'):unlocked;
     const achievementId=stageId==='level-0'?'first-route':stageId==='level-1'?'tab-reader':stageId==='level-3'?'history-restored':stageId==='level-4'?'cookie-architect':stageId==='level-7'?'quiet-step':stageId==='level-8'?'root-access':'';
     const achievements=achievementId?grantAchievement(state,achievementId):state.achievements;
-    set({completedStages:completed,unlockedStages:unlocks,memoryFragments:memories,achievements,completionOverlay:true,lastSavedAt:now()});
+    set({completedStages:completed,unlockedStages:unlocks,memoryFragments:memories,achievements,completionOverlay:true,lastSavedAt:now()});get().recordGameEvent('PUZZLE_SOLVED',{stageId});
+    if(stageId==='level-8')get().triggerRealityBreaker();
     playSound('complete',state.settings);
     get().addNotification('SECTOR COMPLETE',stage.endingLine,'story');
     if(secretUnlocked&&!state.unlockedStages.includes('secret'))get().addNotification('SECRET LEVEL UNLOCKED','Every hidden memory fragment has been recovered.','story');
@@ -107,7 +135,7 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     if(!canEnterRoute(parsed.route,state.activeStageId,progress.flags,state.bookmarks,state.cookies)){
       state.addNotification('ROUTE RESTRICTED','The page needs evidence you have not recovered yet.','warning');playSound('error',state.settings);return;
     }
-    const nextUrl=parsed.url;const route=parsed.route;
+    const nextUrl=parsed.url;const route=parsed.route;get().recordGameEvent('URL_VISITED',{route,url:nextUrl});
     const stack=tab.stack.slice(0,tab.historyIndex+1);stack.push(nextUrl);
     const updatedTab={...tab,url:nextUrl,title:getRouteTitle(route),stack,historyIndex:stack.length-1,submittedAt:undefined};
     let stageProgress=state.stageProgress;let current=stageProgressFor(stageProgress,state.activeStageId);
@@ -152,7 +180,7 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     if(state.activeStageId==='level-8'&&route==='source-fragments')flags.commandFragments=true;
     current={...current,flags};stageProgress={...stageProgress,[state.activeStageId]:current};
     const updatedTabs=state.tabs.map((item)=>item.id===tabId?updatedTab:item);
-    const history=appendHistory(state.history,updatedTab,nextUrl,route.startsWith('snapshot-')?route:undefined);
+    const history=appendHistory(state.history,updatedTab,nextUrl,route.startsWith('snapshot-')?route:undefined,get().featureState.events.at(-1)?.gameTime??1);
     const notifications=state.notifications;
     set({tabs:updatedTabs,history,stageProgress,activeTabId:tabId,lastSavedAt:now(),notifications});
     playSound(route==='not-found'||route.startsWith('dead-')?'error':'load',state.settings);
@@ -169,17 +197,17 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     const index=tab.historyIndex-1;const url=tab.stack[index]!;const progress=stageProgressFor(state.stageProgress,state.activeStageId);const flags={...progress.flags};
     if(state.activeStageId==='level-3')flags.historyUsed=true;
     if(state.activeStageId==='level-9'){flags.loopHistory=true;flags.loopReady=loopReady(flags)}
-    set({tabs:state.tabs.map((item)=>item.id===tab.id?{...item,url,title:getRouteTitle(parseSimUrl(url).route),historyIndex:index,submittedAt:undefined}:item),stageProgress:{...state.stageProgress,[state.activeStageId]:{...progress,flags}},history:appendHistory(state.history,{...tab,url},url),lastSavedAt:now()});
+    get().recordGameEvent('URL_VISITED',{route:parseSimUrl(url).route,url,action:'back'});set({tabs:state.tabs.map((item)=>item.id===tab.id?{...item,url,title:getRouteTitle(parseSimUrl(url).route),historyIndex:index,submittedAt:undefined}:item),stageProgress:{...state.stageProgress,[state.activeStageId]:{...progress,flags}},history:appendHistory(state.history,{...tab,url},url,undefined,get().featureState.events.at(-1)?.gameTime??1),lastSavedAt:now()});
   },
   forward:()=>{
     const state=get();const tab=state.tabs.find((item)=>item.id===state.activeTabId);if(!tab||tab.historyIndex>=tab.stack.length-1){state.addNotification('HISTORY EMPTY','There is no later page in this tab.','info');return}
-    const index=tab.historyIndex+1;const url=tab.stack[index]!;set({tabs:state.tabs.map((item)=>item.id===tab.id?{...item,url,title:getRouteTitle(parseSimUrl(url).route),historyIndex:index,submittedAt:undefined}:item),history:appendHistory(state.history,{...tab,url},url),lastSavedAt:now()});
+    const index=tab.historyIndex+1;const url=tab.stack[index]!;get().recordGameEvent('URL_VISITED',{route:parseSimUrl(url).route,url,action:'forward'});set({tabs:state.tabs.map((item)=>item.id===tab.id?{...item,url,title:getRouteTitle(parseSimUrl(url).route),historyIndex:index,submittedAt:undefined}:item),history:appendHistory(state.history,{...tab,url},url,undefined,get().featureState.events.at(-1)?.gameTime??1),lastSavedAt:now()});
   },
   refresh:()=>{const state=get();const tab=state.tabs.find((item)=>item.id===state.activeTabId);if(tab){playSound('load',state.settings);state.addNotification('PAGE RELOADED',tab.url,'info')}},
   openTab:(url='home.local')=>{
-    const state=get();const tab=makeTab(url);set({tabs:[...state.tabs,tab],activeTabId:tab.id,windowState:{...state.windowState,browser:true},screen:'desktop'});playSound('tab-open',state.settings);get().navigate(url,tab.id);
+    const state=get();const tab=makeTab(url);set({tabs:[...state.tabs,tab],activeTabId:tab.id,windowState:{...state.windowState,browser:true},screen:'desktop'});get().recordGameEvent('TAB_OPENED',{url});playSound('tab-open',state.settings);get().navigate(url,tab.id);
   },
-  duplicateTab:(tabId)=>{const state=get();const source=state.tabs.find((tab)=>tab.id===tabId);if(!source)return;const copy={...source,id:id(),openedAt:now(),stack:[source.url],historyIndex:0,arrangement:[],submittedAt:undefined};set({tabs:[...state.tabs,copy],activeTabId:copy.id});get().navigate(copy.url,copy.id);playSound('tab-open',state.settings)},
+  duplicateTab:(tabId)=>{const state=get();const source=state.tabs.find((tab)=>tab.id===tabId);if(!source)return;const copy={...source,id:id(),openedAt:now(),stack:[source.url],historyIndex:0,arrangement:[],submittedAt:undefined};set({tabs:[...state.tabs,copy],activeTabId:copy.id});get().recordGameEvent('TAB_OPENED',{url:source.url,duplicate:true});get().navigate(copy.url,copy.id);playSound('tab-open',state.settings)},
   closeTab:(tabId)=>{const state=get();if(state.tabs.length<=1){state.addNotification('LAST TAB','The browser keeps one tab open.','info');return}const tabs=state.tabs.filter((tab)=>tab.id!==tabId);const activeTabId=state.activeTabId===tabId?(tabs[Math.max(0,state.tabs.findIndex((tab)=>tab.id===tabId)-1)]?.id??tabs[0]!.id):state.activeTabId;set({tabs,activeTabId});playSound('tab-close',state.settings)},
   switchTab:(tabId)=>{if(!get().tabs.some((tab)=>tab.id===tabId))return;set({activeTabId:tabId});playSound('click',get().settings)},
   toggleBookmark:(url)=>{
@@ -232,14 +260,14 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
       return;
     }
     clueNoticesShown.add(clue.id);
-    set({clues:[...state.clues,{...clue,discoveredAt:new Date().toISOString()}],lastSavedAt:now()});
+    set({clues:[...state.clues,{...clue,discoveredAt:recordedGameTick(state.featureState?.events.at(-1)?.gameTime??0)}],lastSavedAt:now(),featureState:{...(state.featureState??defaultFeatures()),discoveredClues:addUnique((state.featureState??defaultFeatures()).discoveredClues,clue.id)}});get().recordGameEvent('CLUE_DISCOVERED',{clueId:clue.id});
     get().addNotification('CLUE RECOVERED',clue.title,'story');playSound('notification',get().settings);
   },
   discoverMemory:(fragment)=>{
     const state=get();if(state.memoryFragments.some((item)=>item.id===fragment.id))return;
-    const memoryFragments=[...state.memoryFragments,{...fragment,discoveredAt:new Date().toISOString()}];const secret=canUnlockSecret(memoryFragments);const unlockedStages=secret?addUnique(state.unlockedStages,'secret'):state.unlockedStages;
+    const memoryFragments=[...state.memoryFragments,{...fragment,discoveredAt:recordedGameTick(state.featureState?.events.at(-1)?.gameTime??0)}];const secret=canUnlockSecret(memoryFragments);const unlockedStages=secret?addUnique(state.unlockedStages,'secret'):state.unlockedStages;
     const achievements=secret?grantAchievement(state,'all-memories'):state.achievements;
-    set({memoryFragments,unlockedStages,achievements,lastSavedAt:now()});state.addNotification('MEMORY FRAGMENT RECOVERED',fragment.text,'story');if(secret&&!state.unlockedStages.includes('secret'))state.addNotification('SECRET LEVEL UNLOCKED','All hidden memories have been recovered.','story');playSound('whisper',state.settings);
+    set({memoryFragments,unlockedStages,achievements,lastSavedAt:now()});get().recordGameEvent('MEMORY_FRAGMENT_FOUND',{fragmentId:fragment.id});state.addNotification('MEMORY FRAGMENT RECOVERED',fragment.text,'story');if(secret&&!state.unlockedStages.includes('secret'))state.addNotification('SECRET LEVEL UNLOCKED','All hidden memories have been recovered.','story');playSound('whisper',state.settings);
   },
   addCookie:(cookie)=>set((state)=>({cookies:state.cookies.some((item)=>item.name===cookie.name)?state.cookies:[...state.cookies,cookie]})),
   chooseMissingTab:()=>{
@@ -295,25 +323,27 @@ export const useGameStore = create<GameStore>()(persist((set,get) => ({
     set({terminalLog:addLine(state,raw,output,kind)});if(!parsed.ok)playSound('error',state.settings);
   },
   spendHint:()=>{
-    const state=get();const progress=stageProgressFor(state.stageProgress,state.activeStageId);const index=Math.min(Number(progress.flags.hintsUsed??0),2);set({stageProgress:{...state.stageProgress,[state.activeStageId]:{...progress,flags:{...progress.flags,hintsUsed:index+1}}}});return index;
+    const state=get();const progress=stageProgressFor(state.stageProgress,state.activeStageId);const index=Math.min(Number(progress.flags.hintsUsed??0),2);set({stageProgress:{...state.stageProgress,[state.activeStageId]:{...progress,flags:{...progress.flags,hintsUsed:index+1}}}});get().recordGameEvent('HINT_REQUESTED',{levelId:state.activeStageId});return index;
   },
   updateSettings:(settings)=>set((state)=>({settings:{...state.settings,...settings}})),
 }), {
   name:SAVE_KEY,
-  version:3,
+  version:4,
   storage:createJSONStorage(()=>localStorage),
   partialize:(state)=>({
     screen:state.screen,activeStageId:state.activeStageId,unlockedStages:state.unlockedStages,completedStages:state.completedStages,
     tabs:state.tabs,activeTabId:state.activeTabId,history:state.history,bookmarks:state.bookmarks,cookies:state.cookies,clues:state.clues,
     memoryFragments:state.memoryFragments,achievements:state.achievements,endingsSeen:state.endingsSeen,chosenEnding:state.chosenEnding,
     stageProgress:state.stageProgress,terminalLog:state.terminalLog,observerHeat:state.observerHeat,observerLastHost:state.observerLastHost,observerPath:state.observerPath,
-    settings:state.settings,newGamePlus:state.newGamePlus,lastSavedAt:state.lastSavedAt,completionOverlay:state.completionOverlay,
+    settings:state.settings,newGamePlus:state.newGamePlus,lastSavedAt:state.lastSavedAt,completionOverlay:state.completionOverlay,featureState:state.featureState,
   }),
   migrate:(persisted,version)=>{
     const current=initialData();if(version===0||!persisted||typeof persisted!=='object')return current;
     const old=persisted as Partial<Snapshot>;
     const settings={...current.settings,...old.settings} as SettingsState&{musicEnabled?:boolean};delete settings.musicEnabled;
-    return {...current,...old,settings,windowState:{...current.windowState},stageProgress:old.stageProgress??current.stageProgress};
+    const oldFeatures=(old as Partial<GameStore>).featureState;const defaults=defaultFeatures();
+    const previouslyReachedRealityBreak=Boolean((old as Partial<GameStore>).completedStages?.includes('level-8'));
+    return {...current,...old,settings,windowState:{...current.windowState},stageProgress:old.stageProgress??current.stageProgress,featureState:{...defaults,...oldFeatures,featureFlags:{...defaults.featureFlags,...oldFeatures?.featureFlags},counters:{...defaults.counters,...oldFeatures?.counters},flags:{...defaults.flags,...oldFeatures?.flags},emailReplies:oldFeatures?.emailReplies??{},archivedEmails:oldFeatures?.archivedEmails??[],flaggedEmails:oldFeatures?.flaggedEmails??[],inspectedFiles:oldFeatures?.inspectedFiles??[],visitsByRoute:oldFeatures?.visitsByRoute??{},nestedTabs:oldFeatures?.nestedTabs??['browser','files','terminal'],nestedActiveTab:oldFeatures?.nestedActiveTab??'browser',nestedMinimized:oldFeatures?.nestedMinimized??false,mirrorSequence:oldFeatures?.mirrorSequence??[],systemsSection:oldFeatures?.systemsSection??'files',realityBreakSeen:oldFeatures?.realityBreakSeen??previouslyReachedRealityBreak}};
   },
 }));
 
